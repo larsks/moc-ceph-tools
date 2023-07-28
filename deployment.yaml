@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: moc-ceph-tools
+spec:
+  replicas: 3
+  template:
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 1
+              preference:
+                matchExpressions:
+                  - key: moc-ceph-tools
+                    operator: Exists
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                      - moc-ceph-tools
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - command:
+          - python3
+          - /scripts/config-ceph.py
+        env:
+        - name: ROOK_CEPH_USERNAME
+          valueFrom:
+            secretKeyRef:
+              key: ceph-username
+              name: rook-ceph-mon
+        - name: ROOK_CEPH_SECRET
+          valueFrom:
+            secretKeyRef:
+              key: ceph-secret
+              name: rook-ceph-mon
+        - name: CLUSTER_DETAILS_PATH
+          value: /cluster/external_cluster_details
+        - name: CEPH_CONFIG_PATH
+          value: /etc/ceph
+        image: registry.redhat.io/odf4/rook-ceph-rhel8-operator@sha256:a954d65942a6128ed6f0272cb3bd5745b086d27c9971e877c8aad739d1e176f1
+        name: rook-ceph-tools
+        securityContext:
+          privileged: true
+          runAsGroup: 2016
+          runAsNonRoot: true
+          runAsUser: 2016
+        volumeMounts:
+        - mountPath: /etc/ceph
+          name: ceph-config
+        - mountPath: /etc/rook
+          name: mon-endpoint-volume
+        - mountPath: /cluster
+          name: external-cluster-details
+        - mountPath: /scripts
+          name: moc-scripts
+      hostNetwork: true
+      tolerations:
+      - effect: NoSchedule
+        key: node.ocs.openshift.io/storage
+        operator: Equal
+        value: "true"
+      volumes:
+      - name: external-cluster-details
+        secret:
+          secretName: rook-ceph-external-cluster-details
+      - hostPath:
+          path: /etc/ceph
+          type: ""
+        name: ceph-config
+      - configMap:
+          defaultMode: 420
+          items:
+          - key: data
+            path: mon-endpoints
+          name: rook-ceph-mon-endpoints
+        name: mon-endpoint-volume
+      - name: moc-scripts
+        configMap:
+          name: moc-scripts
